@@ -33,6 +33,7 @@ from transformers.utils.versions import require_version
 
 import wandb
 import debugpy
+import json
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.17.0.dev0")
@@ -183,7 +184,8 @@ class DataTrainingArguments:
 
     def __post_init__(self):
         if self.dataset_name is None and self.train_file is None and self.validation_file is None:
-            raise ValueError("Need either a dataset name or a training/validation file.")
+            #raise ValueError("Need either a dataset name or a training/validation file.")
+            return
         else:
             if self.train_file is not None:
                 extension = self.train_file.split(".")[-1]
@@ -277,18 +279,25 @@ def main():
             data_files["validation"] = data_args.validation_file
         if data_args.test_file is not None:
             data_files["test"] = data_args.test_file
-        extension = data_args.train_file.split(".")[-1]
+        if training_args.do_train:
+            extension = data_args.train_file.split(".")[-1]
+        else:
+            extension = data_args.test_file.split(".")[-1]
         raw_datasets = load_dataset(extension, data_files=data_files, cache_dir=model_args.cache_dir)
     # See more about loading any type of standard or custom dataset (from files, python dict, pandas DataFrame, etc) at
     # https://huggingface.co/docs/datasets/loading_datasets.html.
 
+    tag_name = None
     if training_args.do_train:
-        column_names = raw_datasets["train"].column_names
-        features = raw_datasets["train"].features
-    else:
-        column_names = raw_datasets["validation"].column_names
-        features = raw_datasets["validation"].features
+        tag_name = 'train'
+    elif training_args.do_eval:
+        tag_name = 'validation'
+    elif training_args.do_predict:
+        tag_name = 'test'
 
+    column_names = raw_datasets[tag_name].column_names
+    features = raw_datasets[tag_name].features
+    
     if data_args.text_column_name is not None:
         text_column_name = data_args.text_column_name
     elif "tokens" in column_names:
@@ -317,7 +326,7 @@ def main():
         label_list = features[label_column_name].feature.names
         label_keys = list(range(len(label_list)))
     else:
-        label_list = get_label_list(raw_datasets["train"][label_column_name])
+        label_list = get_label_list(raw_datasets[tag_name][label_column_name])
         label_keys = label_list
 
     num_labels = len(label_list)
@@ -648,25 +657,10 @@ def main():
 
         # Save predictions
         output_predictions_file = os.path.join(training_args.output_dir, "test_predictions.txt")
-        data_dir = '/'.join(data_args.test_file.split('/')[:-1])
         if trainer.is_world_process_zero():
             with open(output_predictions_file, "w") as writer:
-                with open(os.path.join(data_dir, "test.txt"), "r") as f:
-                    example_id = 0
-                    for line in f:
-                        if line.startswith("-DOCSTART-") or line == "" or line == "\n":
-                            writer.write(line)
-                            if not true_predictions[example_id]:
-                                example_id += 1
-                        elif true_predictions[example_id]:
-                            output_line = line.split()[0] + " " + true_predictions[example_id].pop(0) + "\n"
-                            writer.write(output_line)
-                        else:
-                            logger.warning(
-                                "Maximum sequence length exceeded: No prediction for '%s'.", line.split()[0]
-                            )
-                # for prediction in true_predictions:
-                #     writer.write(" ".join(prediction) + "\n")
+                for prediction in true_predictions:
+                     writer.write(json.dumps(prediction) + "\n")
 
     kwargs = {"finetuned_from": model_args.model_name_or_path, "tasks": "token-classification"}
     if data_args.dataset_name is not None:
@@ -677,10 +671,10 @@ def main():
         else:
             kwargs["dataset"] = data_args.dataset_name
 
-    if training_args.push_to_hub:
-        trainer.push_to_hub(**kwargs)
-    else:
-        trainer.create_model_card(**kwargs)
+    #if training_args.push_to_hub:
+    #    trainer.push_to_hub(**kwargs)
+    #else:
+    #    trainer.create_model_card(**kwargs)
     
     if data_args.use_wandb:
         wandb.finish()
