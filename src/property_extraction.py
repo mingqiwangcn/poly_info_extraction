@@ -1,5 +1,5 @@
 """ Extract property value pairs and post process them to obtain a single property record """
-from record_extraction.base_classes import EntityList, PropertyValuePair, RecordProcessor
+from base_classes import EntityList, PropertyValuePair, RecordProcessor
 from collections import Counter, deque
 import itertools
 import re
@@ -34,8 +34,11 @@ class PropertyExtractor(RecordProcessor):
         self.property_mentions = property_mentions
         self.property_value_pairs = EntityList()
         property_metadata_file = '' # Metadata file that contains relevant information about each property such as units and coreferents
-        with open(property_metadata_file, 'r', encoding='utf-8') as fi:
-            self.prop_records_metadata = json.load(fi)
+        if property_metadata_file != '':
+            with open(property_metadata_file, 'r', encoding='utf-8') as fi:
+                self.prop_records_metadata = json.load(fi)
+        else:
+            self.prop_records_metadata = {}
         self.convert_fraction_to_percentage = [value['property_list'] for key, value in self.prop_records_metadata.items() if value['unit_list'][0]=='%']
     
     def property_extraction(self, sentence, labels):

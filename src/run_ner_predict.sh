@@ -6,7 +6,7 @@ fi
 mode=$1
 MODEL_PATH='/home/cc/code/ner_poly_models'
 out_dir=./output/$mode
-python run_ner.py \
+python -m pdb run_ner.py \
   --model_name_or_path $MODEL_PATH \
   --output_dir $out_dir \
   --test_file ../data/PolymerAbstracts/${mode}.json \
