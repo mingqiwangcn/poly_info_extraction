@@ -1,10 +1,8 @@
 from transformers import AutoModelForTokenClassification, AutoTokenizer, pipeline
-
 import record_extractor
 import utils as record_extractor_utils
 from utils import LoadNormalizationDataset
 from base_classes import GROUPED_SPAN_COLUMNS
-
 import torch
 import argparse
 import logging
@@ -18,16 +16,13 @@ class SimpleExtraction:
             print('GPU device found')
             self.device = 0
         else:
+            print('GPU device not found')
             self.device = -1
         self.polymer_filter = True
         self.verbose = True
-        self.debug = True
-        if not self.debug:
-            self.logger = logging.getlogger(__name__)
-        else:
-            self.logger = None
         model_file = '/home/cc/code/ner_poly_models' # Location of BERT encoder model file to load
 
+        self.logger = None
         # Load NormalizationDataset used to normalize polymer names
         #normalization_dataloader = LoadNormalizationDataset()
         #self.train_data = normalization_dataloader.process_normalization_files()
@@ -51,40 +46,34 @@ class SimpleExtraction:
         for abstract in self.read_abstracts(mode):
             ner_output = self.ner_pipeline(abstract)
             record_extraction_input = record_extractor_utils.ner_feed(ner_output, abstract)
-            relation_extractor = record_extractor.RelationExtraction(text=abstract, spans=record_extraction_input, normalization_dataset=self.train_data, polymer_filter=self.polymer_filter, logger=self.logger, verbose=self.verbose)
-            try:
-                begin = time.time()
-                output, _ = relation_extractor.process_document()
-                if output:
-                    self.timer['relation_extraction'].append(time.time()-begin)
-            except Exception as e:
-                if not self.debug:
-                    self.logger.warning(f'Exception {e} occurred for doi {doi} while parsing the input\n')
-                    self.logger.exception(e)
-                else:
-                    print(f'Exception {e} occurred for doi {doi} while parsing the input\n')
-                    print(traceback.format_exc())
-                    self.relation_extractor = relation_extractor
-            import pdb; pdb.set_trace()
-            # Log some metrics when applying model at scale
-            if output:
-                output['abstract'] = abstract
-                if self.verbose:
-                    output['material_mentions'] = relation_extractor.material_entity_processor.material_mentions.return_list_dict()
-                    output['grouped_spans'] = [named_tuple_to_dict(span) for span in relation_extractor.material_entity_processor.grouped_spans]
-                # Insert output to collection
-                if not self.debug:
-                    self.collection_output.insert_one(output)
-                else:
-                    print(output)
-                    self.relation_extractor = relation_extractor
-
+            relation_extractor = record_extractor.RelationExtraction(text=abstract, 
+                spans=record_extraction_input,
+                normalization_dataset=self.train_data, 
+                polymer_filter=self.polymer_filter, 
+                logger=self.logger, 
+                verbose=self.verbose)
+            output, _ = relation_extractor.process_document()
+            if output is None:
+                continue
+            out_meta = {}
+            out_meta['abstract'] = abstract
+            if self.verbose:
+                out_meta['material_mentions'] = relation_extractor.material_entity_processor.material_mentions.return_list_dict()
+                out_meta['grouped_spans'] = [named_tuple_to_dict(span) for span in relation_extractor.material_entity_processor.grouped_spans]
+            print(output)
+            print(out_meta)
+    
+            
 def named_tuple_to_dict(named_tuple):
     current_dict = {}
     for col in GROUPED_SPAN_COLUMNS:
         current_dict[col] = getattr(named_tuple, col)
     return current_dict
 
-if __name__ == '__main__':
+def main():
     extractor = SimpleExtraction()
     extractor.start('train')
+
+if __name__ == '__main__':
+    main()
+    
